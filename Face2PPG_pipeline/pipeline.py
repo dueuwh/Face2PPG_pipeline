@@ -375,6 +375,8 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
 #                             ldmk_save_dir=coord_save_dir, kalman_type=kalman_type)
 # =============================================================================
 
+# git test
+
 if __name__ == "__main__":
     
     multiprocessing.set_start_method('spawn', force=True)
