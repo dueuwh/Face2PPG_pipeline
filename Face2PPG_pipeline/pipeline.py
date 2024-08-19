@@ -97,9 +97,6 @@ class frame_loader:
 
 
 # multiprocessing loader
-# add redundant annotation
-# for git commit test
-# yeah
 
 def frame_q_loader(frame_dir, start_index):
     try:
@@ -383,7 +380,7 @@ if __name__ == "__main__":
     multiprocessing.set_start_method('spawn', force=True)
     
     frame_q = Queue()
-    p2 = Process(target)
+    # p2 = Process(target)
     
     frame_start = 0
     folder_start = 0

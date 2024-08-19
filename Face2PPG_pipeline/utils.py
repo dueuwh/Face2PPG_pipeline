@@ -394,7 +394,7 @@ class PointUKF:
             self.ukf = UKF(dim_x=4, dim_z=2, fx=self.fx, hx=self.hx, dt=dt, points=self.points)
             
         elif self.transition == "dynamic":
-            self.ukf = UKF(dim_x=, dim_z=, fx=self.fx_arima, hx=self.hx, dt=dt, points=self.points)
+            self.ukf = UKF(dim_x=4, dim_z=2, fx=self.fx_arima, hx=self.hx, dt=dt, points=self.points)
             self.x_arq = []  # (13, 1, 1)
             self.y_arq = []  # (7, 1, 0)
             self.x_maq = []
@@ -512,8 +512,8 @@ class MyUKF:
             self.A = self.__dynamic()
             self.queue_x = []
             self.queue_y = []
-            self.x_qlen = 
-            self.y_qlen = 
+            self.x_qlen = 100
+            self.y_qlen = 100
         elif transition_func == 'stationary':
             self.A = self.__stationary()
         elif transition_func == 'sinusoidal':
@@ -592,7 +592,8 @@ class MyUKF:
 
     def update(self, z):
         if self.transition_func == 'dynamic':
-            if len(self.queue_x) > 
+            if len(self.queue_x) > self.x_qlen:
+                pass
         else:
             sigma_points = self.generate_sigma_points()
             sigma_points_pred = self.predict_sigma_points(sigma_points)
