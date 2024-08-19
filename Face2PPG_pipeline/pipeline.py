@@ -97,9 +97,6 @@ class frame_loader:
 
 
 # multiprocessing loader
-# add redundant annotation
-# for git commit test
-# yeah
 
 def frame_q_loader(frame_dir, start_index):
     try:
