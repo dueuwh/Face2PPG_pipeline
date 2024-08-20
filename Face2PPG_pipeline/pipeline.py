@@ -65,7 +65,8 @@ class frame_loader:
     def __init__(self, frame_dir, start_index=0):
         
         self.frame_dir = frame_dir
-        self.frame_list = os.listdir(self.frame_dir)
+        self.frame_list = sorted(os.listdir(self.frame_dir))
+        print("frame_list: ", self.frame_list)
         self.frame_length = len(self.frame_list)
         self.frame_count = 0
         self.frame_shape = np.load(self.frame_dir+self.frame_list[0]).shape[:2]
@@ -86,7 +87,7 @@ class frame_loader:
     
     def get_frame(self):
         self.frame_count += 1
-        if self.frame_count < self.frame_length:
+        if self.frame_count < self.frame_length - self.start_index:
             try:
                 output = np.load(self.frame_dir+self.frame_list[self.frame_count + self.start_index])
                 return output
@@ -189,21 +190,40 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
     # outputs["rppg_window"] = {}
     outputs["rppg_save"] = {}
     outputs["bpm_save"] = {}
+    outputs["snr_pass"] = {}
     for algorithm in algorithms:
         outputs["rppg_save"][algorithm] = []
         # outputs["rppg_window"][algorithm] = []
         outputs["bpm_save"][algorithm] = []
+        outputs["snr_pass"][algorithm] = []
     
     
     bvp_proceed = bvps()
     bpm_proceed = BPM()
-    
+
+    old_ldmk = []
+
     while True:
-        
-        image = frame_queue.get(timeout=5)
+        try:
+            image = frame_queue.get(timeout=5)
+        except queue.Empty:
+            for algorithm in algorithms:
+                outputs["rppg_save"][algorithm] + filtered_temp[:, 0].tolist()
+                outputs["bpm_save"][algorithm] += [0 for _ in range(
+                    len(outputs["rppg_save"][algorithm]) - len(outputs["bpm_save"][algorithm]))]
+                rppg_df = pd.DataFrame(outputs["rppg_save"][algorithm])
+                bpm_df = pd.DataFrame(outputs["bpm_save"][algorithm])
+                snr_df = pd.DataFrame(outputs["snr_pass"][algorithm])
+                save_csv = pd.concat([rppg_df, bpm_df, snr_df], axis=1)
+                save_csv.to_csv(rppg_dir + algorithm + '.csv')
+            break
+
+        if processed_frames_count % 300 == 0:
+            print(f"rPPG processing: {round(processed_frames_count/total*100, 2)}%")
+
         if not isinstance(image, np.ndarray):
-            print(f"{ldmk_save_dir} finished")
             if image == "EoD":
+                print("finished ")
                 break
             elif image == None:
                 if save_flag:
@@ -237,6 +257,7 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                         ldmk_counter += 1
                     coord_list.append(coord_arr)
                     cropped_skin_im, full_skin_im = skin_ex.extract_skin(image, landmark_coords)
+                old_ldmk = landmark_coords
                     # print("landmark_coords: ", landmark_coords.shape)
                 if save_flag:
                     with open(ldmk_save_dir, 'a') as f:
@@ -249,8 +270,7 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                         f.write(f"None None\n{processed_frames_count}")
         else:
             print(f"A face is not detected {processed_frames_count}")
-            cropped_skin_im = np.zeros_like(image)
-            full_skin_im = np.zeros_like(image)
+            cropped_skin_im, _ = skin_ex.extract_skin(image, old_ldmk)
             if save_flag:
                 with open(ldmk_save_dir, 'a') as f:
                     f.write(f"None None\n{processed_frames_count}")
@@ -303,25 +323,16 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                     filtered_temp[:, 0] = bpf(temp[:, 0])
 
                     bpm, snr, psnr, pfreqs, power = bpm_proceed.BVP_to_BPM(filtered_temp[:, 0])
+                    outputs["bpm_save"][algorithm].append(bpm)
+                    outputs["rppg_save"][algorithm].append(float(filtered_temp[0, 0]))
                     if snr > 0.045:
-                        outputs["bpm_save"][algorithm].append(bpm)
+                        outputs["snr_pass"][algorithm].append(1)
                     else:
-                        outputs["bpm_save"][algorithm].append(-1)
-                    
-                    if processed_frames_count + 1 == total:
-                        outputs["rppg_save"][algorithm]+filtered_temp[:, 0].tolist()
-                        outputs["bpm_save"][algorithm] + [0 for _ in range(len(outputs["rppg_save"][algorithm])-len(outputs["bpm_save"][algorithm]))]
-                        rppg_df = pd.DataFrame(outputs["rppg_save"][algorithm])
-                        bpm_df = pd.DataFrame(outputs["bpm_save"][algorithm])
-                        save_csv = pd.concat([rppg_df, bpm_df], axis=1)
-                        save_csv.to_csv(rppg_dir+algorithm+'.csv')
-                        
-                    else:
-                        outputs["rppg_save"][algorithm].append(float(filtered_temp[0, 0]))
+                        outputs["snr_pass"][algorithm].append(0)
                 rgb_signal.pop(0)
             
         processed_frames_count += 1
-
+    print("All process is finished")
 # =============================================================================
 # # ldmk_test
 # 
@@ -368,14 +379,20 @@ if __name__ == "__main__":
     rgb_window = 300
     landmark_list = [i for i in range(468)]
     coord_save_dir = "D:/home/BCML/drax/PAPER/data/coordinates/"
-    rppg_dir = "D:/home/BCML/drax/PAPER/data/results/rppg/"
     
     base_video_dir = "D:/home/BCML/drax/PAPER/data/frames/"
     frame_folder_list = os.listdir(base_video_dir)
-    sel_folder = frame_folder_list[0]
+
+    sel_folder = frame_folder_list[1]  # 0,
+
     sel_dir = base_video_dir + sel_folder + '/'
     total_length = len(os.listdir(sel_dir))
-    
+
+    rppg_dir = "D:/home/BCML/drax/PAPER/data/results/rppg/" + sel_folder + '/'
+
+    if sel_folder not in os.listdir("D:/home/BCML/drax/PAPER/data/results/rppg/"):
+        os.mkdir(rppg_dir)
+
     p2 = Process(target=frame_q_loader, args=(frame_q, sel_dir, frame_start))
     p2.start()
     
