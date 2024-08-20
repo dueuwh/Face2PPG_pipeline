@@ -71,7 +71,7 @@ class frame_loader:
         self.frame_shape = np.load(self.frame_dir+self.frame_list[0]).shape[:2]
         self.capture_fps = int(frame_dir.split('/')[-2].split('_')[-1].split('f')[0])
         self.start_index = start_index
-    
+
     def get_fps(self):
         return self.capture_fps
     
@@ -98,51 +98,54 @@ class frame_loader:
 
 # multiprocessing loader
 
-def frame_q_loader(frame_dir, start_index):
+def frame_q_loader(frame_queue, frame_dir, start_index):
     try:
-        frame_list = os.listdir(input_dir)
-        input_loader = frame_loader(input_dir, start_index=frame_start_idx)
+        frame_list = os.listdir(frame_dir)
+        input_loader = frame_loader(frame_dir, start_index=start_index)
         dataset_type = True
         print("input is frames in folder")
     except:
         print("input is video")
-        input_loader = video_loader(input_dir)
+        input_loader = video_loader(frame_dir)
         dataset_type = False
 
     fps = input_loader.get_fps()
     height, width = input_loader.get_frame_shape()
     total_frame = input_loader.get_length()
     
-    processed_frames_count = 0 + frame_start_idx
+    processed_frames_count = 0 + start_index
 
-    print(f"input_dir: {input_dir}")
+    print(f"input_dir: {frame_dir}")
     print(f"input information: fps: {fps}, h: {height}, w: {width}, total: {total_frame}")
     
     while True:
         if processed_frames_count % 300 == 0:
-            print(f"{ldmk_save_dir}\n{round(processed_frames_count / total_frame * 100, 2)} % {processed_frames_count}")
+            print(f"{round(processed_frames_count / total_frame * 100, 2)} % {processed_frames_count}")
         
         image = input_loader.get_frame()
         if not isinstance(image, np.ndarray):
-            print(f"{ldmk_save_dir} finished")
+            print(f"frame loading is finished")
             if image == "EoD":
                 break
             elif image == None:
-                if save_flag:
-                    with open(ldmk_save_dir, 'a') as f:
-                        f.write(f"noframe noframe\n{processed_frames_count}")
+                # if save_flag:
+                #     with open(ldmk_save_dir, 'a') as f:
+                #         f.write(f"noframe noframe\n{processed_frames_count}")
                 continue
         
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
+        frame_queue.put(image)
+        processed_frames_count += 1
         
 
-def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_verbose=False,
+def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_verbose=False,
                             segment_verbose=False, rejection_verbose=False, frame_start_idx=0,
                             ldmk_save_dir=None, kalman_type='stationary',
                             save_flag=False, rppg_save=True,
                             RGB_LOW_TH=55, RGB_HIGH_TH=200,
-                            rgb_window=300, rppg_dir=None):
+                            rgb_window=300, rppg_dir=None,
+                            width=640, height=480,
+                            fps=30, total=0):
     
     """
     
@@ -165,29 +168,6 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
     face_mesh = mp_face_mesh.FaceMesh()
     mp_drawing = mp.solutions.drawing_utils
     
-    
-    # === input frame loader initialization === #
-    
-    try:
-        frame_list = os.listdir(input_dir)
-        input_loader = frame_loader(input_dir, start_index=frame_start_idx)
-        dataset_type = True
-        print("input is frames in folder")
-    except:
-        print("input is video")
-        input_loader = video_loader(input_dir)
-        dataset_type = False
-    
-    # === Legacy test codes === #
-    
-    # face_detector = os.getcwd()+"/face_detection_opencv/"
-    # detector = cv2.dnn.readNetFromCaffe(f"{face_detector}/deploy.prototxt" , f"{face_detector}res10_300x300_ssd_iter_140000.caffemodel")
-    
-    
-    fps = input_loader.get_fps()
-    height, width = input_loader.get_frame_shape()
-    total_frame = input_loader.get_length()
-    
     skin_ex = SkinExtractionConvexHull('CPU')
     polygon_ex = SkinExtractionConvexHull_Polygon('CPU')
     
@@ -200,9 +180,6 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
     # print("coordinate array shape: ", coord_arr.shape)
     
     coord_list = []
-    
-    print(f"input_dir: {input_dir}")
-    print(f"input information: fps: {fps}, h: {height}, w: {width}, total: {total_frame}")
     
     rgb_signal = []
     
@@ -222,10 +199,8 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
     bpm_proceed = BPM()
     
     while True:
-        if processed_frames_count % 300 == 0:
-            print(f"{ldmk_save_dir}\n{round(processed_frames_count / total_frame * 100, 2)} % {processed_frames_count}")
         
-        image = input_loader.get_frame()
+        image = frame_queue.get(timeout=5)
         if not isinstance(image, np.ndarray):
             print(f"{ldmk_save_dir} finished")
             if image == "EoD":
@@ -236,7 +211,7 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
                         f.write(f"noframe noframe\n{processed_frames_count}")
                 continue
         
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         results = face_mesh.process(image)
         
@@ -333,7 +308,7 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
                     else:
                         outputs["bpm_save"][algorithm].append(-1)
                     
-                    if processed_frames_count + 1 == total_frame:
+                    if processed_frames_count + 1 == total:
                         outputs["rppg_save"][algorithm]+filtered_temp[:, 0].tolist()
                         outputs["bpm_save"][algorithm] + [0 for _ in range(len(outputs["rppg_save"][algorithm])-len(outputs["bpm_save"][algorithm]))]
                         rppg_df = pd.DataFrame(outputs["rppg_save"][algorithm])
@@ -375,14 +350,13 @@ def  polygon_model_pipeline(ldmk_list, input_dir, object_state, cropped_skin_ver
 #                             ldmk_save_dir=coord_save_dir, kalman_type=kalman_type)
 # =============================================================================
 
-# git test
 
 if __name__ == "__main__":
     
     multiprocessing.set_start_method('spawn', force=True)
     
     frame_q = Queue()
-    # p2 = Process(target)
+    
     
     frame_start = 0
     folder_start = 0
@@ -392,38 +366,62 @@ if __name__ == "__main__":
     RGB_LOW_TH = np.int32(55)
     RGB_HIGH_TH = np.int32(200)
     rgb_window = 300
-    
-    base_save_dir = "D:/home/BCML/drax/data/illuminance_2/"
     landmark_list = [i for i in range(468)]
-    # input_dir = "D:/home/BCML/IITP/data/videos/multimodal_pilottest_2.mp4"
-    base_dir = "D:/home/BCML/drax/data/illuminance_2/video/"
-    folder_list = os.listdir(base_dir)
-    folder_list = folder_list[folder_start:]
-    for name in folder_list:
+    coord_save_dir = "D:/home/BCML/drax/PAPER/data/coordinates/"
+    rppg_dir = "D:/home/BCML/drax/PAPER/data/results/rppg/"
+    
+    base_video_dir = "D:/home/BCML/drax/PAPER/data/frames/"
+    frame_folder_list = os.listdir(base_video_dir)
+    sel_folder = frame_folder_list[0]
+    sel_dir = base_video_dir + sel_folder + '/'
+    total_length = len(os.listdir(sel_dir))
+    
+    p2 = Process(target=frame_q_loader, args=(frame_q, sel_dir, frame_start))
+    p2.start()
+    
+    polygon_model_pipeline(ldmk_list=landmark_list, frame_queue=frame_q,
+                           object_state="resting", cropped_skin_verbose=False,
+                           segment_verbose=False, rejection_verbose=False, frame_start_idx=frame_start,
+                           ldmk_save_dir=coord_save_dir, kalman_type=kalman_type,
+                           save_flag=save_flag, rppg_save=rppg_save,
+                           RGB_LOW_TH=RGB_LOW_TH, 
+                           RGB_HIGH_TH=RGB_HIGH_TH,
+                           rgb_window=rgb_window,
+                           rppg_dir=rppg_dir, total=total_length)
+    
+    p2.join()
+    
+    # base_save_dir = "D:/home/BCML/drax/data/illuminance_2/"
+    # landmark_list = [i for i in range(468)]
+    # # input_dir = "D:/home/BCML/IITP/data/videos/multimodal_pilottest_2.mp4"
+    # base_dir = "D:/home/BCML/drax/data/illuminance_2/video/"
+    # folder_list = os.listdir(base_dir)
+    # folder_list = folder_list[folder_start:]
+    # for name in folder_list:
         
-        video_list = [name for name in os.listdir(base_dir+name) if '.mov' in name]
+    #     video_list = [name for name in os.listdir(base_dir+name) if '.mov' in name]
         
-        if folder_list.index(name) > folder_start:
-            frame_start = 0
-        split_name = name.split('_')
-        save_folder = name[:-4]
-        coord_save_dir = base_save_dir + save_folder + '.txt'
+    #     if folder_list.index(name) > folder_start:
+    #         frame_start = 0
+    #     split_name = name.split('_')
+    #     save_folder = name[:-4]
+    #     coord_save_dir = base_save_dir + save_folder + '.txt'
         
-        for video in video_list:
-            input_dir = base_dir + name + '/' + video
-            rppg_dir = base_save_dir + "results/" + name + "_snr/"
-            if name+"_snr" not in os.listdir(base_save_dir + "results/"):
-                os.mkdir(rppg_dir)
-            rppg_dir = rppg_dir + video.split('.')[0] + "_"
-            polygon_model_pipeline(ldmk_list=landmark_list, input_dir=input_dir,
-                                object_state="resting", cropped_skin_verbose=False,
-                                segment_verbose=False, rejection_verbose=False, frame_start_idx=frame_start,
-                                ldmk_save_dir=coord_save_dir, kalman_type=kalman_type,
-                                save_flag=save_flag, rppg_save=rppg_save,
-                                RGB_LOW_TH=RGB_LOW_TH, 
-                                RGB_HIGH_TH=RGB_HIGH_TH,
-                                rgb_window=rgb_window,
-                                rppg_dir=rppg_dir)
+    #     for video in video_list:
+    #         input_dir = base_dir + name + '/' + video
+    #         rppg_dir = base_save_dir + "results/" + name + "_snr/"
+    #         if name+"_snr" not in os.listdir(base_save_dir + "results/"):
+    #             os.mkdir(rppg_dir)
+    #         rppg_dir = rppg_dir + video.split('.')[0] + "_"
+    #         polygon_model_pipeline(ldmk_list=landmark_list, frame_queue=frame_q,
+    #                             object_state="resting", cropped_skin_verbose=False,
+    #                             segment_verbose=False, rejection_verbose=False, frame_start_idx=frame_start,
+    #                             ldmk_save_dir=coord_save_dir, kalman_type=kalman_type,
+    #                             save_flag=save_flag, rppg_save=rppg_save,
+    #                             RGB_LOW_TH=RGB_LOW_TH, 
+    #                             RGB_HIGH_TH=RGB_HIGH_TH,
+    #                             rgb_window=rgb_window,
+    #                             rppg_dir=rppg_dir)
     
     
     
