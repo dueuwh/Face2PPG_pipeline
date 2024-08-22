@@ -714,7 +714,7 @@ class SkinExtractionConvexHull_Polygon:
     """
         This class performs skin extraction on CPU/GPU using a Convex Hull segmentation obtained from facial landmarks.
     """
-    def __init__(self,device='CPU'):
+    def __init__(self, device='CPU'):
         """
         Args:
             device (str): This class can execute code on 'CPU' or 'GPU'.

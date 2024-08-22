@@ -234,7 +234,7 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
         # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         results = face_mesh.process(image)
-        
+        cropped_skin_im = np.zeros((3,3,3))
 
         # skin region extraction
         if results.multi_face_landmarks:
@@ -274,33 +274,24 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
             if save_flag:
                 with open(ldmk_save_dir, 'a') as f:
                     f.write(f"None None\n{processed_frames_count}")
-                
-        
-        
+
         if cropped_skin_verbose:
-            x_sc = landmark_coords[:, 1] - min(landmark_coords[:, 1])
-            y_sc = landmark_coords[:, 0] - min(landmark_coords[:, 0])
-            fig = plt.figure()
-            plt.imshow(cropped_skin_im)
-            plt.scatter(x_sc, y_sc, s=1, c='r')  # drawing landmarks on raw frame
-            plt.show()
-        
+            if processed_frames_count % 30 == 0:
+                x_sc = landmark_coords[:, 1] - min(landmark_coords[:, 1])
+                y_sc = landmark_coords[:, 0] - min(landmark_coords[:, 0])
+                plt.imshow(cropped_skin_im)
+                if len(outputs["bpm_save"]["omit"]) >= 1:
+                    plt.title(f"bpm: {outputs['bpm_save']['omit'][-1]}")
+                plt.scatter(x_sc, y_sc, s=1, c='r')  # drawing landmarks on raw frame
+                plt.show()
+
+
         # polygon segmentation
-        """
-        xy_sc = np.concatenate((y_sc.reshape(-1, 1), x_sc.reshape(-1, 1)), axis=1)
-        print("xy_sc shape: ", xy_sc.shape)
-        mesh_set = faceldmk_utils.face_trimesh
-        mesh_set_dict = {}
         
-        for key in mesh_set.keys():
-            mesh_set_dict[key] = polygon_ex.extract_polygon(cropped_skin_im, xy_sc[mesh_set[key], :])
-            
-        if segment_verbose:
-            plt.imshow(mesh_set_dict[key])
-            plt.scatter(x_sc[mesh_set[key]], y_sc[mesh_set[key]], s=1, c='r')
-            plt.show()
-        """
+
         
+        
+        # rppg extraction
         if rppg_save:
             rgb_signal.append(holistic_mean(cropped_skin_im, RGB_LOW_TH, RGB_HIGH_TH))
             
@@ -330,6 +321,8 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                     else:
                         outputs["snr_pass"][algorithm].append(0)
                 rgb_signal.pop(0)
+
+
             
         processed_frames_count += 1
     print("All process is finished")
