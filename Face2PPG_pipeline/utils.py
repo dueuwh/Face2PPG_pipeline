@@ -18,7 +18,7 @@ from scipy.signal import butter, filtfilt, welch
 import cv2
 from filterpy.kalman import UnscentedKalmanFilter as UKF
 from filterpy.kalman import MerweScaledSigmaPoints
-
+import matplotlib.pyplot as plt
 
 def Welch(bvps, fps, minHz=0.65, maxHz=4.0, nfft=2048):
     """
@@ -641,10 +641,11 @@ class SkinExtractionConvexHull:
         # face_mask convex hull 
         hull = ConvexHull(aviable_ldmks)
         verts = [(aviable_ldmks[v,0], aviable_ldmks[v,1]) for v in hull.vertices]
+        # print("verts: \n", verts)
         img = Image.new('L', image.shape[:2], 0)
         ImageDraw.Draw(img).polygon(verts, outline=1, fill=1)
         mask = np.array(img)
-        mask = np.expand_dims(mask,axis=0).T
+        mask = np.expand_dims(mask, axis=0).T
 
         # left eye convex hull
         left_eye_ldmks = ldmks[MagicLandmarks.left_eye]
@@ -707,7 +708,7 @@ class SkinExtractionConvexHull:
             cropped_skin_im = cupy.asnumpy(cropped_skin_im)
             skin_image = cupy.asnumpy(skin_image)
 
-        return cropped_skin_im, skin_image
+        return cropped_skin_im, skin_image, rmin, cmin
         
     
 class SkinExtractionConvexHull_Polygon:
@@ -722,8 +723,12 @@ class SkinExtractionConvexHull_Polygon:
         self.device = device
     
     def extract_polygon_cpu(self, image, ldmks):
-        
-        return 0
+        img = Image.new('L', image.shape[:2], 0)
+        ImageDraw.Draw(img).polygon(ldmks, outline=1, fill=1)
+        mask = np.array(img)
+        mask = np.expand_dims(mask, axis=0).T
+        polygon = image * mask
+        return polygon
     
     def extract_polygon_gpu(self, image, ldmks):
         
@@ -735,7 +740,8 @@ class SkinExtractionConvexHull_Polygon:
         ImageDraw.Draw(img).polygon(verts, outline=1, fill=1)
         mask = np.array(img)
         mask = np.expand_dims(mask,axis=0).T
-        
+
+        output = image * mask
         return output
     
     def extract_polygon(self, image, ldmks):
@@ -760,10 +766,10 @@ class SkinExtractionConvexHull_Polygon:
         
         
         if self.device == "GPU":
-            output = extract_polygon_gpu(image, ldmks)
+            output = self.extract_polygon_gpu(image, ldmks)
         
         else:
-            output = extract_polygon_cpu(image, ldmks)
+            output = self.extract_polygon_cpu(image, ldmks)
         
         return output
     
@@ -905,7 +911,7 @@ class faceldmk_utils():
         6: [21, 71, 139], 7: [21, 139, 162], 8: [162, 34, 127], 9: [162, 139, 34], 10: [127, 34, 227],
         
         11: [127, 227, 234], 12: [234, 227, 137], 13: [234, 137, 93], 14: [137, 177, 93], 15: [93, 177, 132],
-        16: [177, 215, 56], 17: [132, 177, 56], 18: [215, 172, 56], 19: [215, 138, 172], 20: [172, 138, 136],
+        16: [177, 215, 58], 17: [132, 177, 58], 18: [215, 172, 58], 19: [215, 138, 172], 20: [172, 138, 136],
         
         21: [136, 138, 135], 22: [136, 135, 150], 23: [150, 135, 169], 24: [150, 169, 149], 25: [149, 169, 170],
         26: [149, 170, 140], 27: [149, 140, 176], 28: [140, 176, 171], 29: [176, 171, 148], 30: [171, 175, 152],
@@ -977,7 +983,7 @@ class faceldmk_utils():
         246: [442, 282, 443], 247: [282, 443, 444], 248: [444, 282, 283], 249: [444, 283, 445], 250: [445, 283, 276], 
 
         251: [445, 342, 276], 252: [342, 276, 353], 253: [342, 353, 446], 254: [446, 353, 265], 255: [446, 261, 265],
-        256: [261, 265, 340], 257: [448, 261, 436], 258: [261, 346, 340], 259: [448, 346, 347], 260: [449, 448, 347], 
+        256: [261, 265, 340], 257: [448, 261, 346], 258: [261, 346, 340], 259: [448, 346, 347], 260: [449, 448, 347],
 
         261: [110, 24, 229], 262: [110, 228, 229], 263: [25, 110, 228], 264: [25, 31, 228], 265: [226, 25, 31],
         266: [226, 130, 25], 267: [113, 226, 130], 268: [113, 247, 130], 269: [113, 247, 225], 270: [225, 247, 30], 
@@ -998,7 +1004,7 @@ class faceldmk_utils():
         316: [254, 450, 253], 317: [253, 450, 451], 318: [253, 252, 451], 319: [252, 451, 452], 320: [252, 452, 256], 
 
         321: [256, 341, 452], 322: [341, 452, 453], 323: [341, 453, 463], 324: [463, 453, 464], 325: [414, 464, 463],
-        326: [190, 243, 255], 327: [243, 244, 233], 328: [243, 112, 233], 329: [112, 26, 232], 330: [112, 232, 233], 
+        326: [190, 243, 244], 327: [243, 244, 233], 328: [243, 112, 233], 329: [112, 26, 232], 330: [112, 232, 233],
 
         331: [26, 22, 232], 332: [22, 232, 231], 333: [23, 22, 231], 334: [23, 231, 230], 335: [24, 23, 230],
         336: [24, 230, 229], 337: [244, 233, 128], 338: [244, 128, 245], 339: [232, 233, 128], 340: [232, 128, 121], 
@@ -1034,7 +1040,7 @@ class faceldmk_utils():
         436: [371, 358, 266], 437: [358, 266, 423], 438: [423, 266, 426], 439: [426, 266, 425], 440: [426, 425, 427], 
 
         441: [426, 427, 436], 442: [209, 129, 49], 443: [209, 49, 198], 444: [198, 49, 131], 445: [198, 131, 134],
-        446: [198, 134, 236], 447: [235, 134, 51], 448: [51, 236, 3], 449: [3, 51, 195], 450: [51, 195, 5], 
+        446: [198, 134, 236], 447: [236, 134, 51], 448: [51, 236, 3], 449: [3, 51, 195], 450: [51, 195, 5],
 
         451: [195, 5, 281], 452: [195, 281, 248], 453: [248, 281, 456], 454: [456, 281, 363], 455: [456, 363, 420],
         456: [363, 420, 360], 457: [420, 360, 279], 458: [420, 279, 429], 459: [429, 279, 358], 460: [129, 102, 49], 
@@ -1069,7 +1075,7 @@ class faceldmk_utils():
         551: [218, 239, 237], 552: [237, 239, 241], 553: [241, 237, 44], 554: [44, 241, 125], 555: [44, 125, 19],
         556: [44, 1, 19], 557: [1, 19, 274], 558: [274, 19, 354], 559: [354, 274, 461], 560: [274, 461, 457], 
 
-        561: [457, 461, 459], 562: [457, 459, 428], 563: [459, 438, 309], 564: [438, 309, 392], 565: [438, 392, 439],
+        561: [457, 461, 459], 562: [457, 459, 438], 563: [459, 438, 309], 564: [438, 309, 392], 565: [438, 392, 439],
         566: [392, 439, 289], 567: [289, 439, 455], 568: [439, 455, 294], 569: [392, 305, 289], 570: [289, 305, 455], 
 
         571: [305, 455, 460], 572: [455, 460, 294], 573: [294, 460, 327], 574: [98, 97, 167], 575: [98, 167, 165],

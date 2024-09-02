@@ -15,11 +15,14 @@ from utils import *
 from copy import deepcopy
 import queue
 import seaborn as sns
+import sys
 
 import multiprocessing
 from multiprocessing import Process, Queue, Value
 
 import warnings
+
+import time
 warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf")
 
 def coord_preprocessing(coords_series):
@@ -146,7 +149,8 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                             RGB_LOW_TH=55, RGB_HIGH_TH=200,
                             rgb_window=300, rppg_dir=None,
                             width=640, height=480,
-                            fps=30, total=0):
+                            fps=30, total=0,
+                            polygon_keys=[]):
     
     """
     
@@ -256,7 +260,8 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                             coord_row_counter += 1
                         ldmk_counter += 1
                     coord_list.append(coord_arr)
-                    cropped_skin_im, full_skin_im = skin_ex.extract_skin(image, landmark_coords)
+                    cropped_skin_im, full_skin_im, rminv, cminv = skin_ex.extract_skin(image, landmark_coords)
+                    # print("landmark_coords:\n", landmark_coords)
                 old_ldmk = landmark_coords
                     # print("landmark_coords: ", landmark_coords.shape)
                 if save_flag:
@@ -270,7 +275,7 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                         f.write(f"None None\n{processed_frames_count}")
         else:
             print(f"A face is not detected {processed_frames_count}")
-            cropped_skin_im, _ = skin_ex.extract_skin(image, old_ldmk)
+            cropped_skin_im, _, rminv, cminv = skin_ex.extract_skin(image, old_ldmk)
             if save_flag:
                 with open(ldmk_save_dir, 'a') as f:
                     f.write(f"None None\n{processed_frames_count}")
@@ -280,17 +285,40 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
                 x_sc = landmark_coords[:, 1] - min(landmark_coords[:, 1])
                 y_sc = landmark_coords[:, 0] - min(landmark_coords[:, 0])
                 plt.imshow(cropped_skin_im)
-                if len(outputs["bpm_save"]["omit"]) >= 1:
-                    plt.title(f"bpm: {outputs['bpm_save']['omit'][-1]}")
+                plt.title(f"{cropped_skin_im.shape}")
+                # if len(outputs["bpm_save"]["omit"]) >= 1:
+                #     plt.title(f"bpm: {outputs['bpm_save']['omit'][-1]}")
                 plt.scatter(x_sc, y_sc, s=1, c='r')  # drawing landmarks on raw frame
                 plt.show()
 
-
         # polygon segmentation
-        
 
-        
-        
+        polygon_dic = faceldmk_utils.face_trimesh
+
+        total_x = landmark_coords[:, 1] - cminv
+        total_y = landmark_coords[:, 0] - rminv
+
+        for key in polygon_keys:
+            vertices = polygon_dic[key]
+            x = [landmark_coords[vertex, 1] for vertex in vertices] - cminv
+            y = [landmark_coords[vertex, 0] for vertex in vertices] - rminv
+            polygon_coords = np.array([(y[i], x[i]) for i in range(3)])
+            polygon_coords = polygon_coords.astype(np.float32)
+            # print("polygon_coords: \n", polygon_coords)
+            cropped_polygon = polygon_ex.extract_polygon(cropped_skin_im, polygon_coords)
+            
+            if segment_verbose:
+                plt.imshow(cropped_skin_im)
+                plt.scatter(total_x, total_y, s=5)
+                plt.scatter(x, y, c='r', s=15)
+                plt.title(f"cropped polygon {key} {cropped_polygon.shape}")
+                plt.draw()
+                plt.pause(0.3)
+                plt.clf()
+
+        plt.close()
+
+
         # rppg extraction
         if rppg_save:
             rgb_signal.append(holistic_mean(cropped_skin_im, RGB_LOW_TH, RGB_HIGH_TH))
@@ -326,6 +354,7 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
             
         processed_frames_count += 1
     print("All process is finished")
+    
 # =============================================================================
 # # ldmk_test
 # 
@@ -357,12 +386,23 @@ def  polygon_model_pipeline(ldmk_list, frame_queue, object_state, cropped_skin_v
 
 if __name__ == "__main__":
     
+    good_keys = []
+    
+    for key in faceldmk_utils.face_trimesh.keys():
+        if set(faceldmk_utils.face_trimesh[key]).issubset(set(faceldmk_utils.left_eye)):
+            pass
+        elif set(faceldmk_utils.face_trimesh[key]).issubset(set(faceldmk_utils.right_eye)):
+            pass
+        elif set(faceldmk_utils.face_trimesh[key]).issubset(set(faceldmk_utils.mounth)):
+            pass
+        else:
+             good_keys.append(key)
+    
     multiprocessing.set_start_method('spawn', force=True)
     
     frame_q = Queue()
-    
-    
-    frame_start = 0
+
+    frame_start = 1000
     folder_start = 0
     kalman_type = 'stationary'
     save_flag = False
@@ -390,14 +430,15 @@ if __name__ == "__main__":
     p2.start()
     
     polygon_model_pipeline(ldmk_list=landmark_list, frame_queue=frame_q,
-                           object_state="resting", cropped_skin_verbose=False,
-                           segment_verbose=False, rejection_verbose=False, frame_start_idx=frame_start,
+                           object_state="resting", cropped_skin_verbose=True,
+                           segment_verbose=True, rejection_verbose=False, frame_start_idx=frame_start,
                            ldmk_save_dir=coord_save_dir, kalman_type=kalman_type,
                            save_flag=save_flag, rppg_save=rppg_save,
                            RGB_LOW_TH=RGB_LOW_TH, 
                            RGB_HIGH_TH=RGB_HIGH_TH,
                            rgb_window=rgb_window,
-                           rppg_dir=rppg_dir, total=total_length)
+                           rppg_dir=rppg_dir, total=total_length,
+                           polygon_keys=good_keys)
     
     p2.join()
     
