@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr 17 10:19:15 2024
-
-@author: ys
-"""
-
 import numpy as np
 from scipy.spatial import ConvexHull
 import scipy.linalg
